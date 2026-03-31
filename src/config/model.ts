@@ -42,6 +42,26 @@ function resolveModelMeta(id: string): ModelMeta {
   return key ? KNOWN_MODEL_META[key] : DEFAULT_META;
 }
 
+const OPENAI_COMPAT_FIXED = {
+  api: "openai-completions" as const,
+  provider: "openai" as const,
+  compat: {
+    supportsDeveloperRole: false,
+    supportsReasoningEffort: false,
+    supportsStore: false,
+  },
+};
+
+function createOpenAICompatModel(baseUrl: string, id: string): Model<"openai-completions"> {
+  return {
+    id,
+    name: id,
+    baseUrl: baseUrl.replace(/\/$/, ""),
+    ...OPENAI_COMPAT_FIXED,
+    ...resolveModelMeta(id),
+  } satisfies Model<"openai-completions">;
+}
+
 /**
  * 从环境变量解析模型，两条路径：
  *
@@ -50,26 +70,35 @@ function resolveModelMeta(id: string): ModelMeta {
  * 2. 否则 → PI_PROVIDER + PI_MODEL 走 pi-ai 内置注册表
  */
 export function createModelFromEnv(): Model<any> {
-  const baseUrl = process.env.PI_BASE_URL;
+  const baseUrl = process.env.PI_BASE_URL?.trim();
   if (baseUrl) {
-    const id = process.env.PI_MODEL;
+    const id = process.env.PI_MODEL?.trim();
     if (!id) throw new Error("PI_MODEL is required when PI_BASE_URL is set");
-    return {
-      id,
-      name: id,
-      api: "openai-completions",
-      provider: "openai",
-      baseUrl: baseUrl.replace(/\/$/, ""),
-      ...resolveModelMeta(id),
-      compat: {
-        supportsDeveloperRole: false,
-        supportsReasoningEffort: false,
-        supportsStore: false,
-      },
-    } satisfies Model<"openai-completions">;
+    return createOpenAICompatModel(baseUrl, id);
   }
 
   const provider = process.env.PI_PROVIDER ?? "openai";
   const modelId = process.env.PI_MODEL ?? "gpt-4o-mini";
   return getModel(provider as never, modelId as never);
+}
+
+/**
+ * 可选：仅用于上下文摘要（auto/manual compact），便于换便宜、快的小模型省费。
+ * 未设置 `AGENT_COMPACT_MODEL` 时返回 `null`，调用方应回退到 `createModelFromEnv()` 的主模型。
+ *
+ * - `AGENT_COMPACT_BASE_URL` + `AGENT_COMPACT_MODEL`：OpenAI 兼容端点；密钥 `AGENT_COMPACT_API_KEY`，缺省用 `PI_API_KEY`
+ * - 仅 `AGENT_COMPACT_MODEL`：`AGENT_COMPACT_PROVIDER`（缺省同 `PI_PROVIDER` 或 `openai`）+ pi-ai 注册表
+ */
+export function createSummarizeModelFromEnv(): Model<any> | null {
+  const id = process.env.AGENT_COMPACT_MODEL?.trim();
+  if (!id) return null;
+
+  const baseUrl = process.env.AGENT_COMPACT_BASE_URL?.trim();
+  if (baseUrl) return createOpenAICompatModel(baseUrl, id);
+
+  const provider =
+    process.env.AGENT_COMPACT_PROVIDER?.trim() ??
+    process.env.PI_PROVIDER ??
+    "openai";
+  return getModel(provider as never, id as never);
 }
