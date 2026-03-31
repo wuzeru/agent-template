@@ -4,6 +4,7 @@ import chalk from "chalk";
 import {
   CancellableLoader,
   CombinedAutocompleteProvider,
+  Container,
   Editor,
   Markdown,
   ProcessTerminal,
@@ -79,6 +80,7 @@ const markdownTheme: MarkdownTheme = {
 const terminal = new ProcessTerminal();
 const tui = new TUI(terminal);
 
+const chatArea = new Container();
 const agent = createAppAgent();
 
 let currentMd: Markdown | null = null;
@@ -88,7 +90,7 @@ agent.subscribe((event) => {
   if (event.type === "message_start") {
     accumulatedText = "";
     currentMd = new Markdown("", 1, 0, markdownTheme);
-    tui.addChild(currentMd);
+    chatArea.addChild(currentMd);
   }
 
   if (
@@ -101,7 +103,7 @@ agent.subscribe((event) => {
   }
 
   if (event.type === "tool_execution_start") {
-    tui.addChild(
+    chatArea.addChild(
       new Markdown(
         `_[工具] \`${event.toolName}\` …_`,
         1,
@@ -115,7 +117,7 @@ agent.subscribe((event) => {
   if (event.type === "agent_end") {
     const last = event.messages[event.messages.length - 1];
     if (last?.role === "assistant" && (last as any).errorMessage) {
-      tui.addChild(
+      chatArea.addChild(
         new Markdown(
           `> **错误**: ${(last as any).errorMessage}`,
           1,
@@ -124,11 +126,31 @@ agent.subscribe((event) => {
         ),
       );
     }
-    tui.addChild(new Spacer(1));
+    chatArea.addChild(new Spacer(1));
     editor.disableSubmit = false;
+    tui.setFocus(editor);
     tui.requestRender();
   }
 });
+
+async function sendAgentPrompt(text: string, label = "思考中…"): Promise<void> {
+  editor.disableSubmit = true;
+  currentMd = null;
+
+  const loader = new CancellableLoader(tui, chalk.cyan, chalk.gray, label);
+  loader.onAbort = () => {
+    agent.abort?.();
+  };
+  chatArea.addChild(loader);
+  loader.start();
+
+  await agent.prompt(text);
+
+  loader.stop();
+  chatArea.removeChild(loader);
+  tui.setFocus(editor);
+  tui.requestRender();
+}
 
 // ─── Editor ──────────────────────────────────────────────────────────────────
 
@@ -155,44 +177,21 @@ editor.onSubmit = async (text) => {
   }
 
   if (input === "/clear") {
-    // 清空所有子组件，仅保留 editor
-    tui.removeChild(editor);
-    // 重新添加
-    tui.addChild(editor);
+    chatArea.clear();
     agent.clearMessages?.();
     tui.requestRender();
     return;
   }
 
-  editor.disableSubmit = true;
-  currentMd = null;
-
-  // 用户消息
-  tui.addChild(
+  chatArea.addChild(
     new Markdown(`**你**: ${input}`, 1, 0, markdownTheme),
   );
-  tui.addChild(new Spacer(1));
+  chatArea.addChild(new Spacer(1));
 
-  // loading 占位
-  const loader = new CancellableLoader(
-    tui,
-    chalk.cyan,
-    chalk.gray,
-    "思考中…",
-  );
-  loader.onAbort = () => {
-    agent.abort?.();
-  };
-  tui.addChild(loader);
-  loader.start();
-
-  await agent.prompt(input);
-
-  loader.stop();
-  tui.removeChild(loader);
-  tui.requestRender();
+  await sendAgentPrompt(input);
 };
 
+tui.addChild(chatArea);
 tui.addChild(editor);
 tui.setFocus(editor);
 
