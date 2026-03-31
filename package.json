@@ -1,0 +1,26 @@
+{
+  "name": "video-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "基于 @mariozechner/pi-agent-core 的 Agent 应用骨架",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "tsx src/cli.ts",
+    "start": "node dist/cli.js",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@mariozechner/pi-agent-core": "^0.64.0",
+    "@mariozechner/pi-ai": "^0.64.0",
+    "@mariozechner/pi-tui": "^0.64.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.3"
+  }
+}
